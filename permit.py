@@ -1,7 +1,7 @@
 # permit.py
 """
 智慧社区数据库辅助自动处理工具
-Version 1.32
+Version 0.4.0
 Runtime Python 3.6+
 
 Copyright (GPL) 2020-2021 Kiven Lee, <kivensoft@gmail.com>
@@ -35,7 +35,7 @@ class C:
     dictId, dictName = "dict_id", "dict_name"
     roleId, permits = "role_id", "permits"
     permitId, permitGroup, permitName = "permit_id", "permit_group", "permit_name"
-    permitUrlId, url = "permit_url_id", "url"
+    permitUrlId, url, ps = "permit_url_id", "url", "ps"
     menuId = "menu_id"
 
 #region 常量定义 
@@ -116,7 +116,7 @@ def sortPermit(conn: db.Connection) -> None:
     permitUrlDict = klib.groupby(conn.query(PERMIT_URLS_SQL), lambda x: x[C.permitId])
     roles = conn.query(ROLES_SQL)
 
-    for r in roles: r["ps"] = bits.toList(r[C.permits])
+    for r in roles: r[C.ps] = bits.toList(r[C.permits])
 
     idx = permits[0][C.permitId]
     for v in permits:
@@ -136,7 +136,7 @@ def runPermit(conn: db.Connection) -> None:
         permitUrlDict = klib.groupby(conn.query(PERMIT_URLS_SQL), lambda x: x[C.permitId])
         menuDict = klib.groupby(conn.query(MENU_SQL), lambda x: x[C.permitId])
 
-        for r in roles: r["ps"] = bits.toList(r[C.permits])
+        for r in roles: r[C.ps] = bits.toList(r[C.permits])
 
         # 校验是否紧凑排序
         if not isCompactRecords(permits, C.permitId):
@@ -162,22 +162,7 @@ def runPermit(conn: db.Connection) -> None:
 
         input("\n输入回车键继续: ")
 
-# 移动权限回调函数
-def movePermitItem(oldPermit: Record, newPermit: Record, permitUrlDict: RecordDict,
-                menuDict: RecordDict, roles: Records, conn: db.Connection, clearOld: bool = True) -> None:
-
-    oldId, newId = oldPermit[C.permitId], newPermit[C.permitId]
-
-    # 更新角色权限的变化
-    changeRoles(roles, newId, oldId, clearOld)
-    conn.execute(UPD_PERMIT_ALL_SQL, newPermit[C.permitGroup], newPermit[C.permitName], oldId)
-
-    # 更新关联的t_permit_url
-    updateRelation(permitUrlDict, newId, lambda x: conn.execute(UPD_PERMIT_URL_SQL, oldId, x[C.permitUrlId]))
-    # 更新关联的t_menu
-    updateRelation(menuDict, newId, lambda x: conn.execute(UPD_MENU_SQL, oldId, x[C.menuId]))
-    print("")
-
+# 通用更新关联记录函数，通过回调函数进行具体处理
 def updateRelation(dict_: RecordDict, key: object, callback: Callable[[Record], object]):
     list_ = dict_.get(key)
     if list_:
@@ -187,7 +172,7 @@ def updateRelation(dict_: RecordDict, key: object, callback: Callable[[Record], 
 def changeRoles(roles: Records, oldPermit: int, newPermit: int, clearOld: bool = True):
     if oldPermit < 0 or newPermit < 0: return
     for r in roles:
-        ps = r["ps"]
+        ps = r[C.ps]
         b = bits.getBit(r[C.permits], oldPermit)
         if clearOld: bits.setBit(ps, oldPermit, False)
         bits.setBit(ps, newPermit, b)
@@ -196,7 +181,7 @@ def changeRoles(roles: Records, oldPermit: int, newPermit: int, clearOld: bool =
 def saveRoles(conn: db.Connection, roles: Records) -> None:
     first = True
     for r in roles:
-        newPermits = bits.toStr(r["ps"])
+        newPermits = bits.toStr(r[C.ps])
         if newPermits != r[C.permits]:
             if first:
                 first = False
@@ -222,6 +207,22 @@ def parseCmd(cmd: str, maxIndex: int) -> Optional[Tuple[int, int]]:
         cc.p(cc.R, "索引范围无效!")
         return None
     return (ids[0], ids[1])
+
+# 移动权限回调函数
+def movePermitItem(oldPermit: Record, newPermit: Record, permitUrlDict: RecordDict,
+                menuDict: RecordDict, roles: Records, conn: db.Connection, clearOld: bool = True) -> None:
+
+    oldId, newId = oldPermit[C.permitId], newPermit[C.permitId]
+
+    # 更新角色权限的变化
+    changeRoles(roles, newId, oldId, clearOld)
+    conn.execute(UPD_PERMIT_ALL_SQL, newPermit[C.permitGroup], newPermit[C.permitName], oldId)
+
+    # 更新关联的t_permit_url
+    updateRelation(permitUrlDict, newId, lambda x: conn.execute(UPD_PERMIT_URL_SQL, oldId, x[C.permitUrlId]))
+    # 更新关联的t_menu
+    updateRelation(menuDict, newId, lambda x: conn.execute(UPD_MENU_SQL, oldId, x[C.menuId]))
+    print("")
 
 # 移动列表中的项到指定位置
 def moveItem(pos: Tuple[int, int], records: Records, callback: Callable[[Record, Record, bool], None]) -> None:
