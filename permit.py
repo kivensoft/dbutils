@@ -21,7 +21,7 @@ class DefConfig:
 #region 泛型类型定义
 Record = Dict[str, object]
 Records = List[Record]
-RecordDict = List[object, List[Record]]
+RecordDict = Dict[object, List[Record]]
 #endregion
 
 # 定义全局app变量，用于在程序中共享一些全局变量
@@ -114,6 +114,7 @@ def moveDictItem(oldDict: Record, newDict: Record, permits: Records, conn: db.Co
 def sortPermit(conn: db.Connection) -> None:
     permits = conn.query(PERMITS_SQL)
     permitUrlDict = klib.groupby(conn.query(PERMIT_URLS_SQL), lambda x: x[C.permitId])
+    menuDict = klib.groupby(conn.query(MENU_SQL), lambda x: x[C.permitId])
     roles = conn.query(ROLES_SQL)
 
     for r in roles: r[C.ps] = bits.toList(r[C.permits])
@@ -125,6 +126,7 @@ def sortPermit(conn: db.Connection) -> None:
             conn.execute(UPD_PERMIT_ID_SQL, idx, oldId)
             changeRoles(roles, oldId, idx)
             updateRelation(permitUrlDict, oldId, lambda x: conn.execute(UPD_PERMIT_URL_SQL, idx, x[C.permitUrlId]))
+            updateRelation(menuDict, oldId, lambda x: conn.execute(UPD_MENU_SQL, idx, x[C.menuId]))
             print("")
         idx += 1
     saveRoles(conn, roles)
@@ -241,8 +243,9 @@ def isCompactRecords(records: Records, key: str) -> bool:
     if records:
         idx = records[0][key]
         for r in records:
-            if idx != r[key]: return False
-        idx += 1
+            if idx != r[key]:
+                return False
+            idx += 1
     return True
 
 # 解析命令行参数
